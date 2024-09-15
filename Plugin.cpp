@@ -1,4 +1,4 @@
-#include "framework.h"
+ï»¿#include "framework.h"
 #include "ConstEncrypt.h"
 
 //#define DeleteAntiQiapiaoObject
@@ -13,27 +13,27 @@
 #define Set32(p, v) { *(UINT32 *)(p) = (v); }
 #define Set64(p, v) { *(UINT64 *)(p) = (v); }
 
-//Ïà¶ÔÑ°Ö·
+//ç›¸å¯¹å¯»å€
 #define RelativeAddressing8(a) (Get8(a) + a + sizeof(INT8))
 #define RelativeAddressing32(a) (Get32(a) + a + sizeof(INT32))
 
 
-DWORD g_TimerID;
+UINT_PTR g_TimerID;
 
 namespace QQSpeed
 {
 	HWND Window = NULL;
 	HMODULE Module_TopKart = 0;
-	UINT Memory_Base = 0;
-	UINT Memory_Base_Person = 0;
-	UINT Memory_Base_Person_Self = 0;
-	UINT Memory_Person_Kart = 0;
-	UINT Memory_Kart_Phys = 0;
-	UINT Memory_Kart_Phys_Param = 0;
-	UINT Memory_Kart_Phys_Param_AntiQiapiao = 0;
-	UINT Memory_Kart_Phys_Param_AntiQiapiao_Enable = 0;
+	UINT_PTR Memory_Base = 0;
+	UINT_PTR Memory_Base_Person = 0;
+	UINT_PTR Memory_Base_Person_Self = 0;
+	UINT_PTR Memory_Person_Kart = 0;
+	UINT_PTR Memory_Kart_Phys = 0;
+	UINT_PTR Memory_Kart_Phys_Param = 0;
+	UINT_PTR Memory_Kart_Phys_Param_AntiQiapiao = 0;
+	UINT_PTR Memory_Kart_Phys_Param_AntiQiapiao_Enable = 0;
 
-	// ¼ÓÃÜ¹ı³Ì£º»ùÓÚÒì»òÔËËãºÍ¸Ä±äË³Ğò£¬×îºóÒ»¸ö×Ö½ÚÒÆ¶¯µ½×îÇ°£¬Ê£Óà×Ö½ÚÍùºóÒÆ¶¯¡£
+	// åŠ å¯†è¿‡ç¨‹ï¼šåŸºäºå¼‚æˆ–è¿ç®—å’Œæ”¹å˜é¡ºåºï¼Œæœ€åä¸€ä¸ªå­—èŠ‚ç§»åŠ¨åˆ°æœ€å‰ï¼Œå‰©ä½™å­—èŠ‚å¾€åç§»åŠ¨ã€‚
 	void Encrypt(int* key, char* data, int len)
 	{
 		char v3, v6;
@@ -47,7 +47,7 @@ namespace QQSpeed
 		*data = v6;
 	}
 
-	// ½âÃÜ¹ı³Ì£º»ùÓÚÒì»òÔËËãºÍ¸Ä±äË³Ğò£¬×îÇ°Ò»¸ö×Ö½ÚÒÆ¶¯µ½×îºó£¬Ê£Óà×Ö½ÚÍùÇ°ÒÆ¶¯¡£
+	// è§£å¯†è¿‡ç¨‹ï¼šåŸºäºå¼‚æˆ–è¿ç®—å’Œæ”¹å˜é¡ºåºï¼Œæœ€å‰ä¸€ä¸ªå­—èŠ‚ç§»åŠ¨åˆ°æœ€åï¼Œå‰©ä½™å­—èŠ‚å¾€å‰ç§»åŠ¨ã€‚
 	void Decrypt(int* key, char* data, int len)
 	{
 		char v3, v6;
@@ -61,9 +61,9 @@ namespace QQSpeed
 		*data = v6;
 	}
 
-	DWORD GetObject(DWORD CallAddr, DWORD This)
+	UINT_PTR GetObject(UINT_PTR CallAddr, UINT_PTR This)
 	{
-		return ((DWORD (__thiscall*)(DWORD)) CallAddr)(This);
+		return ((UINT_PTR(__thiscall*)(UINT_PTR)) CallAddr)(This);
 	}
 
 	class EncryptBoolPtr
@@ -74,7 +74,7 @@ namespace QQSpeed
 
 		void set(BOOL value)
 		{
-			//¸ÄÖµÓ¦¸ÃË³±ã¸üĞÂkey, ÕâÀï²»×ö¸üĞÂ
+			//æ”¹å€¼åº”è¯¥é¡ºä¾¿æ›´æ–°key, è¿™é‡Œä¸åšæ›´æ–°
 			QQSpeed::Encrypt(&key, (char*)&value, sizeof(BOOL));
 			*data = value;
 		}
@@ -86,13 +86,18 @@ namespace QQSpeed
 			return value;
 		}
 	};
-	static_assert(sizeof(BOOL) == 4, "´íÎóµÄ´óĞ¡");
-	static_assert(sizeof(EncryptBoolPtr) == 8, "´íÎóµÄ½á¹¹´óĞ¡");
+	static_assert(sizeof(BOOL) == 4, "é”™è¯¯çš„å¤§å°");
+#if defined(_M_IX86)
+	static_assert(sizeof(EncryptBoolPtr) == 8, "é”™è¯¯çš„ç»“æ„å¤§å°");
+#elif defined(_M_AMD64)
+	static_assert(sizeof(EncryptBoolPtr) == 16, "é”™è¯¯çš„ç»“æ„å¤§å°");
+#endif
 }
 
-void CALLBACK Timer_AntiAntiQiapiao(HWND hwnd, UINT message, UINT iTimerID, DWORD dwTimer)
+void CALLBACK Timer_AntiAntiQiapiao(HWND hwnd, UINT message, UINT_PTR iTimerID, DWORD dwTimer)
 {
-	UINT p = QQSpeed::GetObject(QQSpeed::Memory_Base, NULL);
+#if defined(_M_IX86)
+	UINT_PTR p = QQSpeed::GetObject(QQSpeed::Memory_Base, NULL);
 	if (p) {
 		p = QQSpeed::GetObject(Get32(Get32(p) + QQSpeed::Memory_Base_Person), p);
 		p = QQSpeed::GetObject(Get32(Get32(p) + QQSpeed::Memory_Base_Person_Self), p);
@@ -108,31 +113,35 @@ void CALLBACK Timer_AntiAntiQiapiao(HWND hwnd, UINT message, UINT iTimerID, DWOR
 					{
 						Set32(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao, NULL);
 						delete (PVOID)temp;
-						//MessageBoxA(QQSpeed::Window, "ÒÑÉ¾³ı·´¿¨Æ¯¶ÔÏó£¡", "debug", MB_OK);
+						//MessageBoxA(QQSpeed::Window, "å·²åˆ é™¤åå¡æ¼‚å¯¹è±¡ï¼", "debug", MB_OK);
 					}
 #else
 					p = Get32(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao);
 					if (p)
 					{
-						// 2022Äê03ÔÂ ´Ó BOOL ±ä³É BOOL*
+						// 2022å¹´03æœˆ ä» BOOL å˜æˆ BOOL*
 						QQSpeed::EncryptBoolPtr* EncryptData = (QQSpeed::EncryptBoolPtr*)(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao_Enable);
-						EncryptData->set(FALSE); //½ûÓÃ·´¿¨Æ¯
+						EncryptData->set(FALSE); //ç¦ç”¨åå¡æ¼‚
 					}
 #endif
 				}
 			}
 		}
 	}
+#elif defined(_M_AMD64)
+	// TODO
+#endif
+
 }
 
-void CALLBACK Timer_Init(HWND hwnd, UINT message, UINT iTimerID, DWORD dwTimer)
+void CALLBACK Timer_Init(HWND hwnd, UINT message, UINT_PTR iTimerID, DWORD dwTimer)
 {
 	//KillTimer(hwnd, iTimerID);
 	SetTimer(hwnd, iTimerID, 1300, Timer_AntiAntiQiapiao);
 }
 
 //Array Of Byte Scan
-DWORD AOBScan(const char* Data, int DataLen, const char* Pattern, int PatternLen, const char* Mask) {
+UINT_PTR AOBScan(const char* Data, int DataLen, const char* Pattern, int PatternLen, const char* Mask) {
 	int i, k;
 	DataLen = (DataLen - PatternLen) + 1;
 	for (i = 0; i < DataLen; i++) {
@@ -141,24 +150,24 @@ DWORD AOBScan(const char* Data, int DataLen, const char* Pattern, int PatternLen
 				goto label;
 			}
 		}
-		return (DWORD)Data;
+		return (UINT_PTR)Data;
 	label:
 		Data++;
 	}
 	return 0;
 }
 
-DWORD AOBScanModule(HMODULE hModule, DWORD Protect, int PatternLen, const char* Pattern, const char* Mask) {
-	PIMAGE_NT_HEADERS PE = (PIMAGE_NT_HEADERS)((LONG)hModule + ((PIMAGE_DOS_HEADER)hModule)->e_lfanew);
+UINT_PTR AOBScanModule(HMODULE hModule, DWORD Protect, int PatternLen, const char* Pattern, const char* Mask) {
+	PIMAGE_NT_HEADERS PE = (PIMAGE_NT_HEADERS)((UINT_PTR)hModule + ((PIMAGE_DOS_HEADER)hModule)->e_lfanew);
 	WORD SectionsNum = PE->FileHeader.NumberOfSections;
 	WORD OptionalHeaderSize = PE->FileHeader.SizeOfOptionalHeader;
 	PIMAGE_SECTION_HEADER Section = (PIMAGE_SECTION_HEADER)((LPBYTE)PE + 4 + sizeof(IMAGE_FILE_HEADER) + OptionalHeaderSize);
-	DWORD Result = 0;
+	UINT_PTR Result = 0;
 	int Length = 0;
 	int i;
 	for (i = 0; SectionsNum > i; i++) {
 		if ((Section->Characteristics & Protect) != 0) {
-			Result = (DWORD)hModule + Section->VirtualAddress;
+			Result = (UINT_PTR)hModule + Section->VirtualAddress;
 			Length = Section->Misc.VirtualSize;
 			Result = AOBScan((char*)Result, Length, Pattern, PatternLen, Mask);
 			if (Result) {
@@ -176,7 +185,7 @@ DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 	HWND hWnd = 0;
 	DWORD PID = 0;
 
-	//»ñÈ¡ÓÎÏ·Ö÷´°¿Ú
+	//è·å–æ¸¸æˆä¸»çª—å£
 	do {
 		while ((hWnd = FindWindowExW(0, hWnd, XorString(L"GAMEAPP"), NULL)) == NULL) {
 			Sleep(500);
@@ -185,13 +194,14 @@ DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 	} while (PID != GetCurrentProcessId());
 	QQSpeed::Window = hWnd;
 
-	//µÈ´ıÏÔÊ¾
+	//ç­‰å¾…æ˜¾ç¤º
 	while (!IsWindowVisible(QQSpeed::Window)) {
 		Sleep(1000);
 	}
 
-	//ÌØÕ÷ÂëËÑË÷
-	DWORD Result, Address;
+	//ç‰¹å¾ç æœç´¢
+	UINT_PTR Result, Address;
+	DWORD Reason;
 	do
 	{
 		Sleep(1000);
@@ -200,48 +210,53 @@ DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 
 	do
 	{
+#if defined(_M_IX86)
 		//2024-03-05
 		//E8 ???????? 8B C8 8B 10 FF 52 ?? 8B C8 8B 10 FF 92 ????0000 8B 88 ????0000 E8 ???????? 8B C8 E8 ???????? 8B C8 E8
 		Result = AOBScanModule(QQSpeed::Module_TopKart, IMAGE_SCN_CNT_CODE, 43,
 			"\xE8\x00\x00\x00\x00\x8B\xC8\x8B\x10\xFF\x52\x00\x8B\xC8\x8B\x10\xFF\x92\x00\x00\x00\x00\x8B\x88\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x8B\xC8\xE8\x00\x00\x00\x00\x8B\xC8\xE8",
 			"\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00\x00\x00\xFF\x00\x00\x00\x00\x00\x00\xFF\xFF\x00\x00\x00\x00\xFF\xFF\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00");
 		if (Result == 0) {
-			Result = 1;
+			Reason = 1;
 			break;
 		}
 		else {
 			Address = Result;
 			Address = RelativeAddressing32(Address + 1);
-			QQSpeed::Memory_Base = Address; //º¯Êı
+			QQSpeed::Memory_Base = Address; //å‡½æ•°
 
-			Address = Result + 5+2+2;
-			QQSpeed::Memory_Base_Person = Get8(Address + 2); //Ğéº¯Êı
+			Address = Result + 5 + 2 + 2;
+			QQSpeed::Memory_Base_Person = Get8(Address + 2); //è™šå‡½æ•°
 
-			Address = Result + 5+2+2+3+2+2;
-			QQSpeed::Memory_Base_Person_Self = Get32(Address + 2); //Ğéº¯Êı
+			Address = Result + 5 + 2 + 2 + 3 + 2 + 2;
+			QQSpeed::Memory_Base_Person_Self = Get32(Address + 2); //è™šå‡½æ•°
 
-			Address = Result + 5+2+2+3+2+2+6;
-			QQSpeed::Memory_Person_Kart = Get32(Address + 2); //Æ«ÒÆ
+			Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6;
+			QQSpeed::Memory_Person_Kart = Get32(Address + 2); //åç§»
 
-			Address = Result + 5+2+2+3+2+2+6+6;
+			Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6 + 6;
 			Address = RelativeAddressing32(Address + 1);
-			QQSpeed::Memory_Kart_Phys = Address; //º¯Êı
+			QQSpeed::Memory_Kart_Phys = Address; //å‡½æ•°
 
-			Address = Result + 5+2+2+3+2+2+6+6+5+2;
+			Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6 + 6 + 5 + 2;
 			Address = RelativeAddressing32(Address + 1);
-			QQSpeed::Memory_Kart_Phys_Param = Address; //º¯Êı
+			QQSpeed::Memory_Kart_Phys_Param = Address; //å‡½æ•°
 		}
 
 		QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao = 0x4C;
 		QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao_Enable = 0x48;
-
-
-		g_TimerID = (DWORD)&Timer_Init;
-		SetTimer(QQSpeed::Window, g_TimerID, 1, Timer_Init);//ÓĞĞ©²Ù×÷±ØĞëÔÚÖ÷Ïß³ÌÖ´ĞĞ
+#elif defined(_M_AMD64)
+		// TODO
+#error æœªæ”¯æŒx64
+#else
+#error ä»…æ”¯æŒx86å’Œx64
+#endif
+		g_TimerID = (UINT_PTR)&Timer_Init;
+		SetTimer(QQSpeed::Window, g_TimerID, 1, Timer_Init);//æœ‰äº›æ“ä½œå¿…é¡»åœ¨ä¸»çº¿ç¨‹æ‰§è¡Œ
 		return 0;
 	} while (false);
 	wchar_t string[1024];
-	wsprintfW(string, XorString(L"Î´ÊÊÅäµ±Ç°ÓÎÏ·°æ±¾£¡´íÎó´úÂë£º%d"), Result);
-	MessageBoxW(hWnd, string, XorString(L"¿¨Æ¯²å¼ş"), MB_OK);
-	return Result;
+	wsprintfW(string, XorString(L"æœªé€‚é…å½“å‰æ¸¸æˆç‰ˆæœ¬ï¼é”™è¯¯ä»£ç ï¼š%d"), Reason);
+	MessageBoxW(hWnd, string, XorString(L"å¡æ¼‚æ’ä»¶"), MB_OK);
+	return Reason;
 }

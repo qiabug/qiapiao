@@ -1,4 +1,4 @@
-#include "framework.h"
+Ôªø#include "framework.h"
 #include "PELoader.h"
 
 PVOID ReadFileToMemory(const wchar_t* FileName, DWORD& Size)
@@ -10,26 +10,23 @@ PVOID ReadFileToMemory(const wchar_t* FileName, DWORD& Size)
 	if (INVALID_HANDLE_VALUE == hFile) {
 		return FALSE;
 	}
-	do{
+	do {
 		FileSize = GetFileSize(hFile, NULL);
-		if (FileSize == 0)
-		{
+		if (FileSize == 0) {
 			break;
 		}
-		else
-		{
+		else {
 			Buffer = VirtualAlloc(NULL, FileSize, MEM_COMMIT, PAGE_READWRITE);
 		}
-		if (!ReadFile(hFile, Buffer, FileSize, &ReadSize, NULL))
-		{
+		if (!ReadFile(hFile, Buffer, FileSize, &ReadSize, NULL)) {
+			VirtualFree(Buffer, 0, MEM_RELEASE);
+			Buffer = NULL;
 			break;
 		}
 		Size = FileSize;
-		CloseHandle(hFile);
-		return Buffer;
-	}while(FALSE);
+	} while (FALSE);
 	CloseHandle(hFile);
-	return NULL;
+	return Buffer;
 }
 
 PVOID PELoader(char* FileData)
@@ -64,7 +61,7 @@ PVOID PELoader(char* FileData)
 	}
 	ZeroMemory(Buffer, ImageSize);
 	
-	//Ω⁄Õ∑
+	//ËäÇÂ§¥
 	IMAGE_SECTION_HEADER* SectionHeader = (IMAGE_SECTION_HEADER*)((char*)nt + sizeof(IMAGE_NT_HEADERS));
 	memcpy(Buffer, FileData, nt->OptionalHeader.SizeOfHeaders);
 	WORD SectionNum = nt->FileHeader.NumberOfSections;
@@ -72,7 +69,7 @@ PVOID PELoader(char* FileData)
 	{
 		memcpy(Buffer + SectionHeader->VirtualAddress, FileData + SectionHeader->PointerToRawData, SectionHeader->SizeOfRawData);
 	}
-	//÷ÿ∂®Œª±Ì
+	//ÈáçÂÆö‰ΩçË°®
 	if (nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size > 0)
 	{
 		IMAGE_BASE_RELOCATION* BaseRelocation = (IMAGE_BASE_RELOCATION*)(Buffer + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
@@ -92,21 +89,24 @@ PVOID PELoader(char* FileData)
 
 				if (Type == IMAGE_REL_BASED_ABSOLUTE)
 				{
-					//Œﬁ“‚“Â
+					//Êó†ÊÑè‰πâ
 				}
+#ifndef _WIN64
 				else if (Type == IMAGE_REL_BASED_HIGHLOW)
 				{
 					*(DWORD32*)(Address + Offset) += Difference;
 				}
+#else
 				else if (Type == IMAGE_REL_BASED_DIR64)
 				{
 					*(DWORD64*)(Address + Offset) += Difference;
 				}
+#endif
 			}
 			BaseRelocation = (IMAGE_BASE_RELOCATION*)((char*)BaseRelocation + BaseRelocation->SizeOfBlock);
 		}
 	}
-	//µº»Î±Ì
+	//ÂØºÂÖ•Ë°®
 	if (nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size > 0)
 	{
 		IMAGE_IMPORT_DESCRIPTOR* ImportDescriptor = (IMAGE_IMPORT_DESCRIPTOR*)(Buffer + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
@@ -167,7 +167,6 @@ VOID ZeroPE(PVOID hModule)
 }
 
 
-
 PVOID LoadDll(const wchar_t* FileName, DWORD Reason)
 {
 	PVOID Address = NULL;
@@ -175,20 +174,16 @@ PVOID LoadDll(const wchar_t* FileName, DWORD Reason)
 	while (VirtualQuery(Address, &MBI, sizeof(MBI)) != 0)
 	{
 		Address = MBI.BaseAddress;
-		if (MBI.State & MEM_COMMIT)
+		if ((MBI.State & MEM_COMMIT) && (MBI.Protect == PAGE_EXECUTE_READWRITE))
 		{
-			if (MBI.Protect == PAGE_EXECUTE_READWRITE)
+			if (memcmp((char*)Address+8, FileName, wcslen(FileName) * sizeof(wchar_t)) == 0)
 			{
-				if (memcmp((char*)Address+8, FileName, wcslen(FileName) * sizeof(wchar_t)) == 0)
-				{
-					//MessageBoxA(nullptr, "÷ÿ∏¥◊¢»Î", "debug", 0);
-					return Address;
-				}
+				//MessageBoxA(nullptr, "ÈáçÂ§çÊ≥®ÂÖ•", "debug", 0);
+				return Address;
 			}
 		}
 		Address = PVOID((SIZE_T)Address + MBI.RegionSize);
 	}
-
 	PVOID FileData = NULL;
 	DWORD FileSize = 0;
 	PVOID ImageMemory = NULL;

@@ -3,26 +3,25 @@
 #include "ConstEncrypt.h"
 #include "PELoader.h"
 
-BOOL IsManualMapInjection = FALSE;
 
 DWORD WINAPI InitPlugin(LPVOID lpThreadParameter);
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
+	static BOOL IsManualMappingInjection = FALSE;
 	switch (ul_reason_for_call)
 	{
 	case DLL_PROCESS_ATTACH:
 	{
-		if (IsManualMapInjection)
-		{
-			HANDLE hThread = CreateThread(NULL, 0, InitPlugin, NULL, 0, NULL);
-			if (hThread)
-			{
-				CloseHandle(hThread);
-			}
-			break;
-		}
 		wchar_t FilePath[MAX_PATH];
+		if (!IsManualMappingInjection)
+		{
+			if (GetModuleFileNameW(hModule, FilePath, MAX_PATH) != 0)
+			{
+				LoadDll(FilePath, -1);
+				return FALSE;
+			}
+		}
 		wchar_t* FileName;
 		GetModuleFileNameW(nullptr, FilePath, MAX_PATH);
 		FileName = wcsrchr(FilePath, '\\');
@@ -31,10 +30,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			FileName++;
 			if (_wcsicmp(FileName, XorString(L"GameApp.exe")) == 0)
 			{
-				if (GetModuleFileNameW(hModule, FilePath, MAX_PATH) != 0)
+				HANDLE hThread = CreateThread(NULL, 0, InitPlugin, NULL, 0, NULL);
+				if (hThread)
 				{
-					LoadDll(FilePath, -1);
+					CloseHandle(hThread);
 				}
+				break;
 			}
 		}
 		return FALSE;
@@ -42,7 +43,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	case DLL_PROCESS_DETACH:
 		break;
 	case -1:
-		IsManualMapInjection = TRUE;
+		IsManualMappingInjection = TRUE;
 		break;
 	}
 	return TRUE;
