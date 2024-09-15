@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 namespace crypt {
 	template <unsigned size>
@@ -6,7 +6,7 @@ namespace crypt {
 	public:
 		wchar_t _string[size];
 
-		//¼ÓÃÜ´æ´¢
+		//åŠ å¯†
 		inline constexpr Xor_string(const wchar_t* string) : _string{}
 		{
 			wchar_t _key = (wchar_t)size;
@@ -16,7 +16,7 @@ namespace crypt {
 			}
 		}
 
-		//½âÃÜ
+		//è§£å¯†
 		const wchar_t* decrypt() const
 		{
 			wchar_t _key = (wchar_t)size;
