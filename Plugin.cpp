@@ -14,27 +14,32 @@
 #define Set64(p, v) { *(UINT64 *)(p) = (v); }
 
 //相对寻址
-#define RelativeAddressing8(a) (Get8(a) + a + sizeof(INT8))
-#define RelativeAddressing32(a) (Get32(a) + a + sizeof(INT32))
+_inline UINT_PTR RelativeAddressing8(UINT_PTR a)
+{
+	return (INT_PTR)*(INT8*)a + a + sizeof(INT8);
+}
+_inline UINT_PTR RelativeAddressing32(UINT_PTR a)
+{
+	return (INT_PTR)*(INT32*)a + a + sizeof(INT32);
+}
 
 
 UINT_PTR g_TimerID;
 
 namespace QQSpeed
 {
-	HWND Window = NULL;
+	HWND MainWindow = NULL;
 	HMODULE Module_TopKart = 0;
-	UINT_PTR Memory_Base = 0;
-	UINT_PTR Memory_Base_Person = 0;
-	UINT_PTR Memory_Base_Person_Self = 0;
-	UINT_PTR Memory_Person_Kart = 0;
+	UINT_PTR Memory_Base = 0; //CGameMain
+	UINT_PTR Memory_Base_PlayerMgr = 0; //CNxPlayerMgr
+	UINT_PTR Memory_Base_PlayerMgr_Self = 0; //CNxPlayer
+	UINT_PTR Memory_Player_Kart = 0;
 	UINT_PTR Memory_Kart_Phys = 0;
-	UINT_PTR Memory_Kart_Phys_Param = 0;
+	UINT_PTR Memory_Kart_Phys_Param = 0; //CCoreKart CDriftCenter
 	UINT_PTR Memory_Kart_Phys_Param_AntiQiapiao = 0;
 	UINT_PTR Memory_Kart_Phys_Param_AntiQiapiao_Enable = 0;
 
-	// 加密过程：基于异或运算和改变顺序，最后一个字节移动到最前，剩余字节往后移动。
-	void Encrypt(int* key, char* data, int len)
+	void memoryEncrypt(int* key, char* data, int len)
 	{
 		char v3, v6;
 		v6 = *data ^ *(char*)key;
@@ -47,8 +52,7 @@ namespace QQSpeed
 		*data = v6;
 	}
 
-	// 解密过程：基于异或运算和改变顺序，最前一个字节移动到最后，剩余字节往前移动。
-	void Decrypt(int* key, char* data, int len)
+	void memoryDecrypt(int* key, char* data, int len)
 	{
 		char v3, v6;
 		v6 = *data ^ ((char*)key)[(len - 1) % 4];
@@ -61,31 +65,33 @@ namespace QQSpeed
 		*data = v6;
 	}
 
-	UINT_PTR GetObject(UINT_PTR CallAddr, UINT_PTR This)
+	UINT_PTR getObject(UINT_PTR CallAddr, UINT_PTR This)
 	{
 		return ((UINT_PTR(__thiscall*)(UINT_PTR)) CallAddr)(This);
 	}
 
+#pragma pack(push, 8)
 	class EncryptBoolPtr
 	{
 	public:
 		int key;
-		BOOL* data;
+		BOOL* data; // 2022年03月 从 BOOL 变成 BOOL*
 
 		void set(BOOL value)
 		{
 			//改值应该顺便更新key, 这里不做更新
-			QQSpeed::Encrypt(&key, (char*)&value, sizeof(BOOL));
+			QQSpeed::memoryEncrypt(&key, (char*)&value, sizeof(BOOL));
 			*data = value;
 		}
 
 		BOOL get()
 		{
 			BOOL value = *data;
-			QQSpeed::Decrypt(&key, (char*)&value, sizeof(BOOL));
+			QQSpeed::memoryDecrypt(&key, (char*)&value, sizeof(BOOL));
 			return value;
 		}
 	};
+#pragma pack(pop)
 	static_assert(sizeof(BOOL) == 4, "错误的大小");
 #if defined(_M_IX86)
 	static_assert(sizeof(EncryptBoolPtr) == 8, "错误的结构大小");
@@ -97,15 +103,15 @@ namespace QQSpeed
 void CALLBACK Timer_AntiAntiQiapiao(HWND hwnd, UINT message, UINT_PTR iTimerID, DWORD dwTimer)
 {
 #if defined(_M_IX86)
-	UINT_PTR p = QQSpeed::GetObject(QQSpeed::Memory_Base, NULL);
+	UINT_PTR p = QQSpeed::getObject(QQSpeed::Memory_Base, NULL);
 	if (p) {
-		p = QQSpeed::GetObject(Get32(Get32(p) + QQSpeed::Memory_Base_Person), p);
-		p = QQSpeed::GetObject(Get32(Get32(p) + QQSpeed::Memory_Base_Person_Self), p);
+		p = QQSpeed::getObject(Get32(Get32(p) + QQSpeed::Memory_Base_PlayerMgr), p);
+		p = QQSpeed::getObject(Get32(Get32(p) + QQSpeed::Memory_Base_PlayerMgr_Self), p);
 		if (p) {
-			p = Get32(p + QQSpeed::Memory_Person_Kart);
-			p = QQSpeed::GetObject(QQSpeed::Memory_Kart_Phys, p);
+			p = Get32(p + QQSpeed::Memory_Player_Kart);
+			p = QQSpeed::getObject(QQSpeed::Memory_Kart_Phys, p);
 			if (p) {
-				p = QQSpeed::GetObject(QQSpeed::Memory_Kart_Phys_Param, p);
+				p = QQSpeed::getObject(QQSpeed::Memory_Kart_Phys_Param, p);
 				if (p) {
 #ifdef DeleteAntiQiapiaoObject
 					UINT temp = Get32(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao);
@@ -113,13 +119,12 @@ void CALLBACK Timer_AntiAntiQiapiao(HWND hwnd, UINT message, UINT_PTR iTimerID, 
 					{
 						Set32(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao, NULL);
 						delete (PVOID)temp;
-						//MessageBoxA(QQSpeed::Window, "已删除反卡漂对象！", "debug", MB_OK);
+						//MessageBoxA(QQSpeed::MainWindow, "已删除反卡漂对象！", "debug", MB_OK);
 					}
 #else
 					p = Get32(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao);
 					if (p)
 					{
-						// 2022年03月 从 BOOL 变成 BOOL*
 						QQSpeed::EncryptBoolPtr* EncryptData = (QQSpeed::EncryptBoolPtr*)(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao_Enable);
 						EncryptData->set(FALSE); //禁用反卡漂
 					}
@@ -129,9 +134,37 @@ void CALLBACK Timer_AntiAntiQiapiao(HWND hwnd, UINT message, UINT_PTR iTimerID, 
 		}
 	}
 #elif defined(_M_AMD64)
-	// TODO
+	UINT_PTR p = QQSpeed::getObject(QQSpeed::Memory_Base, NULL);
+	if (p) {
+		p = QQSpeed::getObject(Get64(Get64(p) + QQSpeed::Memory_Base_PlayerMgr), p);
+		p = QQSpeed::getObject(Get64(Get64(p) + QQSpeed::Memory_Base_PlayerMgr_Self), p);
+		if (p) {
+			p = Get64(p + QQSpeed::Memory_Player_Kart);
+			p = QQSpeed::getObject(QQSpeed::Memory_Kart_Phys, p);
+			if (p) {
+				p = QQSpeed::getObject(QQSpeed::Memory_Kart_Phys_Param, p);
+				if (p) {
+#ifdef DeleteAntiQiapiaoObject
+					UINT temp = Get64(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao);
+					if (temp)
+					{
+						Set64(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao, NULL);
+						delete (PVOID)temp;
+						//MessageBoxA(QQSpeed::MainWindow, "已删除反卡漂对象！", "debug", MB_OK);
+					}
+#else
+					p = Get64(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao);
+					if (p)
+					{
+						QQSpeed::EncryptBoolPtr* EncryptData = (QQSpeed::EncryptBoolPtr*)(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao_Enable);
+						EncryptData->set(FALSE); //禁用反卡漂
+					}
 #endif
-
+				}
+			}
+		}
+	}
+#endif
 }
 
 void CALLBACK Timer_Init(HWND hwnd, UINT message, UINT_PTR iTimerID, DWORD dwTimer)
@@ -185,21 +218,16 @@ DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 	HWND hWnd = 0;
 	DWORD PID = 0;
 
-	//获取游戏主窗口
+	//获取主窗口句柄
 	do {
 		while ((hWnd = FindWindowExW(0, hWnd, XorString(L"GAMEAPP"), NULL)) == NULL) {
 			Sleep(500);
 		}
 		GetWindowThreadProcessId(hWnd, &PID);
 	} while (PID != GetCurrentProcessId());
-	QQSpeed::Window = hWnd;
+	QQSpeed::MainWindow = hWnd;
 
-	//等待显示
-	while (!IsWindowVisible(QQSpeed::Window)) {
-		Sleep(1000);
-	}
-
-	//特征码搜索
+	//获取模块基址
 	UINT_PTR Result, Address;
 	DWORD Reason;
 	do
@@ -208,6 +236,7 @@ DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 		QQSpeed::Module_TopKart = GetModuleHandleW(XorString(L"Top-Kart.dll"));
 	} while (QQSpeed::Module_TopKart == NULL);
 
+	//特征码定位
 	do
 	{
 #if defined(_M_IX86)
@@ -226,13 +255,13 @@ DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 			QQSpeed::Memory_Base = Address; //函数
 
 			Address = Result + 5 + 2 + 2;
-			QQSpeed::Memory_Base_Person = Get8(Address + 2); //虚函数
+			QQSpeed::Memory_Base_PlayerMgr = Get8(Address + 2); //虚函数
 
 			Address = Result + 5 + 2 + 2 + 3 + 2 + 2;
-			QQSpeed::Memory_Base_Person_Self = Get32(Address + 2); //虚函数
+			QQSpeed::Memory_Base_PlayerMgr_Self = Get32(Address + 2); //虚函数
 
 			Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6;
-			QQSpeed::Memory_Person_Kart = Get32(Address + 2); //偏移
+			QQSpeed::Memory_Player_Kart = Get32(Address + 2); //偏移
 
 			Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6 + 6;
 			Address = RelativeAddressing32(Address + 1);
@@ -246,13 +275,44 @@ DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 		QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao = 0x4C;
 		QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao_Enable = 0x48;
 #elif defined(_M_AMD64)
-		// TODO
-#error 未支持x64
+		//E8 ???????? 48 8B C8 48 8B 10 FF 52 ?? 48 8B C8 48 8B 10 FF 92 ????0000 48 8B 88 ????0000 E8 ???????? 48 8B C8 E8 ???????? 48 8B C8 E8
+		Result = AOBScanModule(QQSpeed::Module_TopKart, IMAGE_SCN_CNT_CODE, 50,
+			"\xE8\x00\x00\x00\x00\x48\x8B\xC8\x48\x8B\x10\xFF\x52\x00\x48\x8B\xC8\x48\x8B\x10\xFF\x92\x00\x00\x00\x00\x48\x8B\x88\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x48\x8B\xC8\xE8\x00\x00\x00\x00\x48\x8B\xC8\xE8",
+			"\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00\x00\x00\x00\x00\xFF\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\x00\x00\x00\x00\x00\xFF\xFF\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00");
+		if (Result == 0) {
+			Reason = 1;
+			break;
+		}
+		else {
+			Address = Result;
+			Address = RelativeAddressing32(Address + 1);
+			QQSpeed::Memory_Base = Address; //函数
+
+			Address = Result + 5 + 3 + 3;
+			QQSpeed::Memory_Base_PlayerMgr = Get8(Address + 2); //虚函数
+
+			Address = Result + 5 + 3 + 3 + 3 + 3 + 3;
+			QQSpeed::Memory_Base_PlayerMgr_Self = Get32(Address + 2); //虚函数
+
+			Address = Result + 5 + 3 + 3 + 3 + 3 + 3 + 6;
+			QQSpeed::Memory_Player_Kart = Get32(Address + 3); //偏移
+
+			Address = Result + 5 + 3 + 3 + 3 + 3 + 3 + 6 + 7;
+			Address = RelativeAddressing32(Address + 1);
+			QQSpeed::Memory_Kart_Phys = Address; //函数
+
+			Address = Result + 5 + 3 + 3 + 3 + 3 + 3 + 6 + 7 + 5 + 3;
+			Address = RelativeAddressing32(Address + 1);
+			QQSpeed::Memory_Kart_Phys_Param = Address; //函数
+		}
+
+		QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao = 0x90;
+		QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao_Enable = 0x90;
 #else
 #error 仅支持x86和x64
 #endif
 		g_TimerID = (UINT_PTR)&Timer_Init;
-		SetTimer(QQSpeed::Window, g_TimerID, 1, Timer_Init);//有些操作必须在主线程执行
+		SetTimer(QQSpeed::MainWindow, g_TimerID, 1, Timer_Init);//有些操作必须在主线程执行
 		return 0;
 	} while (false);
 	wchar_t string[1024];
