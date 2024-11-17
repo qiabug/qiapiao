@@ -53,32 +53,33 @@ PVOID PELoader(char* FileData)
 	}
 #endif
 
-	DWORD ImageSize = nt->OptionalHeader.SizeOfImage;
-	char* Buffer = (char*)VirtualAlloc(NULL, ImageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (Buffer == NULL)
+	DWORD imageSize = nt->OptionalHeader.SizeOfImage;
+	char* imageBuffer = (char*)VirtualAlloc(NULL, imageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+	if (imageBuffer == NULL)
 	{
 		return NULL;
 	}
-	ZeroMemory(Buffer, ImageSize);
+	ZeroMemory(imageBuffer, imageSize);
 	
-	//节头
-	IMAGE_SECTION_HEADER* SectionHeader = (IMAGE_SECTION_HEADER*)((char*)nt + sizeof(IMAGE_NT_HEADERS));
-	memcpy(Buffer, FileData, nt->OptionalHeader.SizeOfHeaders);
-	WORD SectionNum = nt->FileHeader.NumberOfSections;
-	for (WORD i = 0; i < SectionNum; i++, SectionHeader++)
+	//Section
+	IMAGE_SECTION_HEADER* sections = (IMAGE_SECTION_HEADER*)((char*)nt + sizeof(IMAGE_NT_HEADERS));
+	memcpy(imageBuffer, FileData, nt->OptionalHeader.SizeOfHeaders);
+	WORD sectionNumber = nt->FileHeader.NumberOfSections;
+	for (WORD i = 0; i < sectionNumber; i++)
 	{
-		memcpy(Buffer + SectionHeader->VirtualAddress, FileData + SectionHeader->PointerToRawData, SectionHeader->SizeOfRawData);
+		memcpy(imageBuffer + sections[i].VirtualAddress, FileData + sections[i].PointerToRawData, sections[i].SizeOfRawData);
 	}
-	//重定位表
+
+	//BaseReloc
 	if (nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size > 0)
 	{
-		IMAGE_BASE_RELOCATION* BaseRelocation = (IMAGE_BASE_RELOCATION*)(Buffer + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
-		DWORD_PTR Difference = (DWORD_PTR)Buffer - nt->OptionalHeader.ImageBase;
+		IMAGE_BASE_RELOCATION* BaseRelocation = (IMAGE_BASE_RELOCATION*)(imageBuffer + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
+		DWORD_PTR Difference = (DWORD_PTR)imageBuffer - nt->OptionalHeader.ImageBase;
 		SIZE_T Size = (SIZE_T)BaseRelocation + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size;
 
 		while (Size > (SIZE_T)BaseRelocation)
 		{
-			char* Address = Buffer + BaseRelocation->VirtualAddress;
+			char* Address = imageBuffer + BaseRelocation->VirtualAddress;
 			DWORD Count = (BaseRelocation->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
 
 			WORD* RelocationItem = (WORD*)((char*)BaseRelocation + sizeof(IMAGE_BASE_RELOCATION));
@@ -106,52 +107,53 @@ PVOID PELoader(char* FileData)
 			BaseRelocation = (IMAGE_BASE_RELOCATION*)((char*)BaseRelocation + BaseRelocation->SizeOfBlock);
 		}
 	}
-	//导入表
+
+	//Import
 	if (nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size > 0)
 	{
-		IMAGE_IMPORT_DESCRIPTOR* ImportDescriptor = (IMAGE_IMPORT_DESCRIPTOR*)(Buffer + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
+		IMAGE_IMPORT_DESCRIPTOR* ImportDescriptor = (IMAGE_IMPORT_DESCRIPTOR*)(imageBuffer + nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
 
-		for (; ImportDescriptor->Name != NULL; ImportDescriptor++)
+		for (; ImportDescriptor->Name; ImportDescriptor++)
 		{
-			IMAGE_THUNK_DATA* ThunkData = (IMAGE_THUNK_DATA*)(Buffer + ImportDescriptor->FirstThunk);
+			IMAGE_THUNK_DATA* ThunkData = (IMAGE_THUNK_DATA*)(imageBuffer + ImportDescriptor->FirstThunk);
 
-			char* Name = Buffer + ImportDescriptor->Name;
-			HINSTANCE hInstance = LoadLibraryA(Name);
+			char* name = imageBuffer + ImportDescriptor->Name;
+			HINSTANCE hInstance = LoadLibraryA(name);
 			if (hInstance == NULL)
 			{
-				VirtualFree(Buffer, 0, MEM_RELEASE);
+				VirtualFree(imageBuffer, 0, MEM_RELEASE);
 				return NULL;
 			}
 
 			for (; ThunkData->u1.Ordinal != 0; ThunkData++)
 			{
-				FARPROC ProcAddress;
-				if (ThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG32)
+				FARPROC address;
+				if (ThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG)
 				{
-					ProcAddress = GetProcAddress(hInstance, (LPCSTR)(ThunkData->u1.Ordinal & 0x0000ffff));
+					DWORD_PTR ordinal = IMAGE_ORDINAL(ThunkData->u1.Ordinal);
+					address = GetProcAddress(hInstance, (LPCSTR)ordinal);
 				}
 				else
 				{
-					IMAGE_IMPORT_BY_NAME* ImportByName = (IMAGE_IMPORT_BY_NAME*)(Buffer + ThunkData->u1.Ordinal);
-					ProcAddress = GetProcAddress(hInstance, (LPCSTR)ImportByName->Name);
+					IMAGE_IMPORT_BY_NAME* importByName = (IMAGE_IMPORT_BY_NAME*)(imageBuffer + ThunkData->u1.AddressOfData);
+					address = GetProcAddress(hInstance, (LPCSTR)importByName->Name);
 				}
 
-				if (ProcAddress == NULL)
+				if (address == NULL)
 				{
-					VirtualFree(Buffer, 0, MEM_RELEASE);
+					VirtualFree(imageBuffer, 0, MEM_RELEASE);
 					return NULL;
 				}
-
-				ThunkData->u1.Ordinal = (DWORD_PTR)ProcAddress;
+				ThunkData->u1.Function = (DWORD_PTR)address;
 			}
 		}
 	}
 
-	dos = (PIMAGE_DOS_HEADER)Buffer;
-	nt = (PIMAGE_NT_HEADERS)((LONG_PTR)Buffer + dos->e_lfanew);
-	nt->OptionalHeader.ImageBase = (DWORD_PTR)Buffer;
+	dos = (PIMAGE_DOS_HEADER)imageBuffer;
+	nt = (PIMAGE_NT_HEADERS)((LONG_PTR)imageBuffer + dos->e_lfanew);
+	nt->OptionalHeader.ImageBase = (DWORD_PTR)imageBuffer;
 
-	return Buffer;
+	return imageBuffer;
 }
 
 BOOL CallDllMain(PVOID hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
