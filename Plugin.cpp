@@ -1,5 +1,4 @@
 ﻿#include "framework.h"
-#include "ConstEncrypt.h"
 
 //#define DeleteAntiQiapiaoObject
 
@@ -119,7 +118,6 @@ void CALLBACK Timer_AntiAntiQiapiao(HWND hwnd, UINT message, UINT_PTR iTimerID, 
 					{
 						Set32(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao, NULL);
 						delete (PVOID)temp;
-						//MessageBoxA(QQSpeed::MainWindow, "已删除反卡漂对象！", "debug", MB_OK);
 					}
 #else
 					p = Get32(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao);
@@ -150,7 +148,6 @@ void CALLBACK Timer_AntiAntiQiapiao(HWND hwnd, UINT message, UINT_PTR iTimerID, 
 					{
 						Set64(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao, NULL);
 						delete (PVOID)temp;
-						//MessageBoxA(QQSpeed::MainWindow, "已删除反卡漂对象！", "debug", MB_OK);
 					}
 #else
 					p = Get64(p + QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao);
@@ -169,49 +166,39 @@ void CALLBACK Timer_AntiAntiQiapiao(HWND hwnd, UINT message, UINT_PTR iTimerID, 
 
 void CALLBACK Timer_Init(HWND hwnd, UINT message, UINT_PTR iTimerID, DWORD dwTimer)
 {
-	//KillTimer(hwnd, iTimerID);
-	SetTimer(hwnd, iTimerID, 1300, Timer_AntiAntiQiapiao);
+	api.SetTimer(hwnd, iTimerID, 1300, Timer_AntiAntiQiapiao);
 }
 
 //Array Of Byte Scan
-UINT_PTR AOBScan(const char* Data, int DataLen, const char* Pattern, int PatternLen, const char* Mask) {
-	int i, k;
-	DataLen = (DataLen - PatternLen) + 1;
-	for (i = 0; i < DataLen; i++) {
-		for (k = 0; k < PatternLen; k++) {
-			if (!(Mask[k] != 0 || Pattern[k] == (Data[k]))) {
-				goto label;
-			}
-		}
-		return (UINT_PTR)Data;
-	label:
-		Data++;
+char* AOBScan(const char* bytes, size_t bytes_len, const char* pattern, size_t pattern_len, const char* mask)
+{
+	for (const char* tail = bytes + (bytes_len - pattern_len); bytes <= tail; bytes++)
+	{
+		for (size_t i = 0; i < pattern_len; i++)
+			if (((bytes[i] ^ pattern[i]) & mask[i]) != 0) goto label;
+		return (char*)bytes;
+	label:;
 	}
-	return 0;
+	return NULL;
 }
 
-UINT_PTR AOBScanModule(HMODULE hModule, DWORD Protect, int PatternLen, const char* Pattern, const char* Mask) {
-	PIMAGE_NT_HEADERS PE = (PIMAGE_NT_HEADERS)((UINT_PTR)hModule + ((PIMAGE_DOS_HEADER)hModule)->e_lfanew);
-	WORD SectionsNum = PE->FileHeader.NumberOfSections;
-	WORD OptionalHeaderSize = PE->FileHeader.SizeOfOptionalHeader;
-	PIMAGE_SECTION_HEADER Section = (PIMAGE_SECTION_HEADER)((LPBYTE)PE + 4 + sizeof(IMAGE_FILE_HEADER) + OptionalHeaderSize);
-	UINT_PTR Result = 0;
-	int Length = 0;
-	int i;
-	for (i = 0; SectionsNum > i; i++) {
-		if ((Section->Characteristics & Protect) != 0) {
-			Result = (UINT_PTR)hModule + Section->VirtualAddress;
-			Length = Section->Misc.VirtualSize;
-			Result = AOBScan((char*)Result, Length, Pattern, PatternLen, Mask);
-			if (Result) {
-				break;
-			}
-		}
-		Section++;
-	}
-	return Result;
+UINT_PTR AOBScanModule(HMODULE hModule, DWORD section_characteristics, size_t pattern_len, const char* pattern, const char* mask)
+{
+	PIMAGE_NT_HEADERS pe = (PIMAGE_NT_HEADERS)((UINT_PTR)hModule + ((PIMAGE_DOS_HEADER)hModule)->e_lfanew);
+	WORD num = pe->FileHeader.NumberOfSections;
+	PIMAGE_SECTION_HEADER section = (PIMAGE_SECTION_HEADER)((UINT_PTR)pe + sizeof(pe->Signature) + sizeof(IMAGE_FILE_HEADER) + pe->FileHeader.SizeOfOptionalHeader);
+	for (WORD i = 0; num > i; i++, section++)
+		if ((section->Characteristics & section_characteristics) != 0)
+			if (UINT_PTR result = (UINT_PTR)AOBScan((char*)hModule + section->VirtualAddress, section->Misc.VirtualSize, pattern, pattern_len, mask))
+				return result;
+	return NULL;
 }
 
+DWORD GetModuleCompileTime(HMODULE hModule)
+{
+	PIMAGE_NT_HEADERS pe = (PIMAGE_NT_HEADERS)((UINT_PTR)hModule + ((PIMAGE_DOS_HEADER)hModule)->e_lfanew);
+	return pe->FileHeader.TimeDateStamp;
+}
 
 DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 {
@@ -220,11 +207,11 @@ DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 
 	//获取主窗口句柄
 	do {
-		while ((hWnd = FindWindowExW(0, hWnd, XorString(L"GAMEAPP"), NULL)) == NULL) {
-			Sleep(500);
+		while ((hWnd = api.FindWindowExW(0, hWnd, XorString(L"GAMEAPP"), NULL)) == NULL) {
+			api.Sleep(500);
 		}
-		GetWindowThreadProcessId(hWnd, &PID);
-	} while (PID != GetCurrentProcessId());
+		api.GetWindowThreadProcessId(hWnd, &PID);
+	} while (PID != api.GetCurrentProcessId());
 	QQSpeed::MainWindow = hWnd;
 
 	//获取模块基址
@@ -232,53 +219,101 @@ DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 	DWORD Reason;
 	do
 	{
-		Sleep(1000);
-		QQSpeed::Module_TopKart = GetModuleHandleW(XorString(L"Top-Kart.dll"));
+		api.Sleep(1000);
+		QQSpeed::Module_TopKart = api.GetModuleHandleW(XorString(L"Top-Kart.dll"));
 	} while (QQSpeed::Module_TopKart == NULL);
 
 	//特征码定位
+	DWORD time = GetModuleCompileTime(QQSpeed::Module_TopKart);
 	do
 	{
 #if defined(_M_IX86)
-		//2024-03-05
-		//E8 ???????? 8B C8 8B 10 FF 52 ?? 8B C8 8B 10 FF 92 ????0000 8B 88 ????0000 E8 ???????? 8B C8 E8 ???????? 8B C8 E8
-		Result = AOBScanModule(QQSpeed::Module_TopKart, IMAGE_SCN_CNT_CODE, 43,
-			"\xE8\x00\x00\x00\x00\x8B\xC8\x8B\x10\xFF\x52\x00\x8B\xC8\x8B\x10\xFF\x92\x00\x00\x00\x00\x8B\x88\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x8B\xC8\xE8\x00\x00\x00\x00\x8B\xC8\xE8",
-			"\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00\x00\x00\xFF\x00\x00\x00\x00\x00\x00\xFF\xFF\x00\x00\x00\x00\xFF\xFF\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00");
-		if (Result == 0) {
-			Reason = 1;
+		if (time < 1333238400) // 2012-04-01
+		{
+			// 更旧的版本未封禁卡漂
+			Reason = 4;
 			break;
 		}
-		else {
-			Address = Result;
-			Address = RelativeAddressing32(Address + 1);
-			QQSpeed::Memory_Base = Address; //函数
+		else if (time > 1682553600) // 2023-04-27
+		{
+			//适用于 Beta83 熔炉盛典 Date:2023-04-28
+			//E8 ???????? 8B C8 8B 10 FF 52 ?? 8B C8 8B 10 FF 92 ????0000 8B 88 ????0000 E8 ???????? 8B C8 E8 ???????? 8B C8 E8
+			Result = AOBScanModule(QQSpeed::Module_TopKart, IMAGE_SCN_CNT_CODE, 43,
+				"\xE8\x00\x00\x00\x00\x8B\xC8\x8B\x10\xFF\x52\x00\x8B\xC8\x8B\x10\xFF\x92\x00\x00\x00\x00\x8B\x88\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x8B\xC8\xE8\x00\x00\x00\x00\x8B\xC8\xE8",
+				"\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00\xFF\xFF\xFF\xFF\x00\x00\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF");
+			if (Result == 0) {
+				Reason = 1;
+				break;
+			}
+			else {
+				Address = Result;
+				Address = RelativeAddressing32(Address + 1);
+				QQSpeed::Memory_Base = Address; //函数
 
-			Address = Result + 5 + 2 + 2;
-			QQSpeed::Memory_Base_PlayerMgr = Get8(Address + 2); //虚函数
+				Address = Result + 5 + 2 + 2;
+				QQSpeed::Memory_Base_PlayerMgr = Get8(Address + 2); //虚函数
 
-			Address = Result + 5 + 2 + 2 + 3 + 2 + 2;
-			QQSpeed::Memory_Base_PlayerMgr_Self = Get32(Address + 2); //虚函数
+				Address = Result + 5 + 2 + 2 + 3 + 2 + 2;
+				QQSpeed::Memory_Base_PlayerMgr_Self = Get32(Address + 2); //虚函数
 
-			Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6;
-			QQSpeed::Memory_Player_Kart = Get32(Address + 2); //偏移
+				Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6;
+				QQSpeed::Memory_Player_Kart = Get32(Address + 2); //偏移
 
-			Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6 + 6;
-			Address = RelativeAddressing32(Address + 1);
-			QQSpeed::Memory_Kart_Phys = Address; //函数
+				Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6 + 6;
+				Address = RelativeAddressing32(Address + 1);
+				QQSpeed::Memory_Kart_Phys = Address; //函数
 
-			Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6 + 6 + 5 + 2;
-			Address = RelativeAddressing32(Address + 1);
-			QQSpeed::Memory_Kart_Phys_Param = Address; //函数
+				Address = Result + 5 + 2 + 2 + 3 + 2 + 2 + 6 + 6 + 5 + 2;
+				Address = RelativeAddressing32(Address + 1);
+				QQSpeed::Memory_Kart_Phys_Param = Address; //函数
+			}
+			QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao = 0x4C;
+			QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao_Enable = 0x48;
 		}
-
-		QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao = 0x4C;
-		QQSpeed::Memory_Kart_Phys_Param_AntiQiapiao_Enable = 0x48;
+		else if (time > 1450310400) // 2015-12-17
+		{
+			//这通常是私服才能登录旧版本，且似乎没有CRC检测，所以如此这般
+			//适用于 Beta28 辉煌之路 ~ Beta82 龙晶大闯关
+/*
+Top-Kart.dll+2D8CB - C6 45 FB 00           - mov byte ptr [ebp-05],00
+Top-Kart.dll+2D8CF - C7 45 F0 01000000     - mov [ebp-10],00000001 { 是否封禁卡漂,改0解 }
+Top-Kart.dll+2D8D6 - 8D 45 F0              - lea eax,[ebp-10]
+Top-Kart.dll+2D8D9 - 50                    - push eax
+Top-Kart.dll+2D8DA - 8B 4D C0              - mov ecx,[ebp-40]
+Top-Kart.dll+2D8DD - 83 C1 4C              - add ecx,4C
+Top-Kart.dll+2D8E0 - E8 8E494002           - call Top-Kart.dll+2432273
+Top-Kart.dll+2D8E5 - C6 45 FB 01           - mov byte ptr [ebp-05],01
+*/
+			//C6 45 ?? 00 C7 45 ?? 01000000 8D 45 ?? 50 8B 4D ?? 83 C1 ?? E8
+			Result = AOBScanModule(QQSpeed::Module_TopKart, IMAGE_SCN_CNT_CODE, 12,
+				"\xC6\x45\x00\x00\xC7\x45\x00\x01\x00\x00\x00\x8D\x45\x00\x50\x8B\x4D\x00\x83\xC1\x00\xE8",
+				"\xFF\xFF\x00\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\x00\xFF\xFF\x00\xFF");
+			if (Result == 0) {
+				Reason = 3;
+				break;
+			}
+			else {
+				int* p = (int*)(Result + 7);
+				DWORD oldProtect;
+				api.VirtualProtect(p, sizeof(int), PAGE_EXECUTE_READWRITE, &oldProtect);
+				*p = 0;
+				api.VirtualProtect(p, sizeof(int), oldProtect, &oldProtect);
+				return 0;
+			}
+		}
+		else
+		{
+			// 不支持
+			Reason = 2;
+			break;
+		}
 #elif defined(_M_AMD64)
+		//适用于 Beta88 幻域大闯关 Date:2024-03-05
+		//不支持 Beta96 Ver19994 Date:2025-06-24, 但支持 Beta96 Ver20012 Date:2025-07-02
 		//E8 ???????? 48 8B C8 48 8B 10 FF 52 ?? 48 8B C8 48 8B 10 FF 92 ????0000 48 8B 88 ????0000 E8 ???????? 48 8B C8 E8 ???????? 48 8B C8 E8
 		Result = AOBScanModule(QQSpeed::Module_TopKart, IMAGE_SCN_CNT_CODE, 50,
 			"\xE8\x00\x00\x00\x00\x48\x8B\xC8\x48\x8B\x10\xFF\x52\x00\x48\x8B\xC8\x48\x8B\x10\xFF\x92\x00\x00\x00\x00\x48\x8B\x88\x00\x00\x00\x00\xE8\x00\x00\x00\x00\x48\x8B\xC8\xE8\x00\x00\x00\x00\x48\x8B\xC8\xE8",
-			"\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00\x00\x00\x00\x00\xFF\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\x00\x00\x00\x00\x00\xFF\xFF\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00");
+			"\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00\xFF\xFF\xFF\xFF\xFF\x00\x00\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF");
 		if (Result == 0) {
 			Reason = 1;
 			break;
@@ -312,11 +347,11 @@ DWORD WINAPI InitPlugin(LPVOID lpThreadParameter)
 #error 仅支持x86和x64
 #endif
 		g_TimerID = (UINT_PTR)&Timer_Init;
-		SetTimer(QQSpeed::MainWindow, g_TimerID, 1, Timer_Init);//有些操作必须在主线程执行
+		api.SetTimer(QQSpeed::MainWindow, g_TimerID, 1, Timer_Init);//有些操作必须在主线程执行
 		return 0;
 	} while (false);
 	wchar_t string[1024];
-	wsprintfW(string, XorString(L"未适配当前游戏版本！错误代码：%d"), Reason);
-	MessageBoxW(hWnd, string, XorString(L"卡漂插件"), MB_OK);
+	api.wsprintfW(string, XorString(L"未适配当前游戏版本！错误代码：%d"), Reason);
+	api.MessageBoxTimeoutW(hWnd, string, XorString(L"卡漂插件"), MB_OK, 0, 5000);
 	return Reason;
 }

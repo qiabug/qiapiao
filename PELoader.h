@@ -1,3 +1,3 @@
 ﻿#pragma once
 
-PVOID LoadDll(const wchar_t* FileName, DWORD Reason);
+PVOID LoadDll(const wchar_t* fileName, DWORD reason);
