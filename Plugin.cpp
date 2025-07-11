@@ -285,7 +285,7 @@ Top-Kart.dll+2D8E0 - E8 8E494002           - call Top-Kart.dll+2432273
 Top-Kart.dll+2D8E5 - C6 45 FB 01           - mov byte ptr [ebp-05],01
 */
 			//C6 45 ?? 00 C7 45 ?? 01000000 8D 45 ?? 50 8B 4D ?? 83 C1 ?? E8
-			Result = AOBScanModule(QQSpeed::Module_TopKart, IMAGE_SCN_CNT_CODE, 12,
+			Result = AOBScanModule(QQSpeed::Module_TopKart, IMAGE_SCN_CNT_CODE, 22,
 				"\xC6\x45\x00\x00\xC7\x45\x00\x01\x00\x00\x00\x8D\x45\x00\x50\x8B\x4D\x00\x83\xC1\x00\xE8",
 				"\xFF\xFF\x00\xFF\xFF\xFF\x00\xFF\xFF\xFF\xFF\xFF\xFF\x00\xFF\xFF\xFF\x00\xFF\xFF\x00\xFF");
 			if (Result == 0) {
